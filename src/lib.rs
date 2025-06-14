@@ -1,67 +1,109 @@
 use itertools::Itertools;
+use num_traits::Euclid;
 
-pub fn tsumo_han_fu() -> impl Iterator<Item = (u32, i32)> {
-    let mut ret = vec![];
-    for fu in (30..=100).step_by(10) {
-        ret.push((1, fu));
-    }
-    for fu in (20..=110).step_by(10) {
-        ret.push((2, fu));
-    }
-    for fu in (20..=50).step_by(10) {
-        ret.push((3, fu));
-    }
-    ret.push((3, 25));
-    ret.push((4, 20));
-    ret.push((4, 25));
-    ret.into_iter()
-}
-pub fn rong_han_fu() -> impl Iterator<Item = (u32, i32)> {
-    let mut ret = vec![];
-    for fu in (30..=100).step_by(10) {
-        ret.push((1, fu));
-    }
-    for fu in (30..=110).step_by(10) {
-        ret.push((2, fu));
-    }
-    for fu in (30..=50).step_by(10) {
-        ret.push((3, fu));
-    }
-    for han in 2..=4 {
-        ret.push((han, 25));
-    }
-    ret.into_iter()
-}
-pub fn to_base_score((han, fu): (u32, i32)) -> i32 {
-    2i32.pow(han + 2) * fu
-}
+pub mod agari_scores;
 
-pub fn mangan_over_base_scores() -> impl Iterator<Item = i32> {
-    [2, 3, 4, 6, 8, 16, 24, 32].into_iter().map(|x| x * 1000)
+#[derive(Clone, Copy)]
+pub struct GameConfig {
+    rank_scores: [i32; 4],
 }
-pub fn tsumo_base_scores() -> impl Iterator<Item = i32> {
-    tsumo_han_fu()
-        .map(to_base_score)
-        .chain(mangan_over_base_scores())
-}
-pub fn rong_base_scores() -> impl Iterator<Item = i32> {
-    rong_han_fu()
-        .map(to_base_score)
-        .chain(mangan_over_base_scores())
+impl GameConfig {
+    pub fn new(rank_scores: [i32; 4]) -> Self {
+        assert!(rank_scores.iter().sum::<i32>() == -1000);
+        Self { rank_scores }
+    }
+    pub fn m_league() -> Self {
+        GameConfig::new([200, -200, -400, -600])
+    }
+    pub fn to_points(self, scores: [i32; 4], deposit: i32) -> [i32; 4] {
+        assert!(deposit >= 0);
+        assert!(scores.iter().sum::<i32>() + deposit * 10 == 1000);
+
+        let scores_sorted = scores.into_iter().sorted().rev().collect_vec();
+        let mut points = scores;
+        for &score in scores_sorted.iter().dedup() {
+            let ranks = (0..4).filter(|&i| scores_sorted[i] == score).collect_vec();
+            let people = (0..4).filter(|&i| scores[i] == score).collect_vec();
+            let count = people.len() as i32;
+            let mut distribute = |point: i32| {
+                let (div, rem) = point.div_rem_euclid(&count);
+                for &person in &people {
+                    points[person] += div;
+                }
+                points[people[0]] += rem;
+            };
+            distribute(ranks.iter().map(|&i| self.rank_scores[i]).sum());
+            if ranks[0] == 0 {
+                distribute(deposit * 10);
+            }
+        }
+
+        assert!(points.iter().sum::<i32>() == 0);
+        points
+    }
 }
 
-pub fn round(x: i32) -> i32 {
-    (x + 99) / 100 * 100
+#[derive(Clone, Copy)]
+pub struct FinalGameState {
+    points: [i32; 4],
+    scores: [i32; 4],
+    stack: i32,
+    deposit: i32,
 }
-pub fn child_tsumo() -> impl Iterator<Item = (i32, i32)> {
-    tsumo_base_scores().map(|base| (round(base), round(base * 2))).sorted().dedup()
+impl FinalGameState {
+    pub fn new(points: [i32; 4], scores: [i32; 4], stack: i32, deposit: i32) -> Self {
+        assert!(points.iter().sum::<i32>() == 0);
+        assert!(scores.iter().sum::<i32>() + deposit * 10 == 1000);
+        Self {
+            points,
+            scores,
+            stack,
+            deposit,
+        }
+    }
+
+    pub fn calc(self, config: GameConfig) {
+        for i in 0..4 {
+            for j in 0..4 {}
+        }
+    }
 }
-pub fn child_rong() -> impl Iterator<Item = i32> {
-    rong_base_scores().map(|base| round(base * 4)).sorted().dedup()
-}
-pub fn parent_tsumo() -> impl Iterator<Item = i32> {
-    tsumo_base_scores().map(|base| round(base * 2)).sorted().dedup()
-}
-pub fn parent_rong() -> impl Iterator<Item = i32> {
-    rong_base_scores().map(|base| round(base * 6)).sorted().dedup()
+
+#[cfg(test)]
+mod tests {
+    use crate::GameConfig;
+
+    #[test]
+    fn test_to_points() {
+        let config = GameConfig::new([200, -200, -400, -600]);
+        assert_eq!(
+            config.to_points([453, 426, 182, -61], 0),
+            [653, 226, -218, -661],
+        );
+        assert_eq!(
+            config.to_points([383, 274, 184, 159], 0),
+            [583, 74, -216, -441],
+        );
+        assert_eq!(
+            config.to_points([237, 263, 263, 237], 0),
+            // +0, +0, -500, -500
+            [-263, 263, 263, -263],
+        );
+        assert_eq!(
+            config.to_points([257, 219, 257, 257], 1),
+            // -132, -134, -134, -600
+            // +4, +3, +3, 0
+            [257 - 132 + 4, 219 - 600, 257 - 134 + 3, 257 - 134 + 3],
+        );
+        // assert_eq!(
+        //     config.to_points([209, 257, 257, 257], 2),
+        //     // +8, +6, +6, 0
+        //     [219 - 600, 257 - 132 + 8, 257 - 134 + 6, 257 - 134 + 6],
+        // );
+        // assert_eq!(
+        //     config.to_points([257, 257, 257, 199], 3),
+        //     // +10, +10, +10, 0
+        //     [219 - 600, 257 - 132 + 8, 257 - 134 + 6, 257 - 134 + 6],
+        // );
+    }
 }

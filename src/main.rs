@@ -1,8 +1,9 @@
-use mahjong_last_game::{child_rong, child_tsumo, parent_rong, parent_tsumo};
+use mahjong_last_game::{
+    FinalGameState, GameConfig,
+    agari_scores::{child_rong, child_tsumo, parent_rong, parent_tsumo},
+};
 
 fn main() {
-    child_tsumo().for_each(|x| println!("{x:?}"));
-    child_rong().for_each(|x| println!("{x:?}"));
-    parent_tsumo().for_each(|x| println!("{x:?}"));
-    parent_rong().for_each(|x| println!("{x:?}"));
+    FinalGameState::new([-230, 331, 452, -573], [159, 349, 199, 298], 0, 0)
+        .calc(GameConfig::m_league());
 }
