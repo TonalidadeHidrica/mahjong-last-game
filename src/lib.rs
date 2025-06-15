@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{array, fmt::Display};
 
 use agari_scores::{child_rong, child_tsumo, parent_rong, parent_tsumo};
 use itertools::Itertools;
@@ -117,8 +117,22 @@ impl FinalGameState {
     pub fn calc(self, config: GameConfig) -> Results {
         let mut results = Results::default();
 
+        let report = |scores: [i32; 4], deposit: i32, end: GameEnd| {
+            let mut points = config.to_points(scores, 0);
+            (0..4).for_each(|i| points[i] += self.points[i]);
+            let mut rank_people = [0, 1, 2, 3];
+            rank_people.sort_by_key(|&i| (-points[i], -self.points[i]));
+
+            GameResult {
+                end,
+                points,
+                scores,
+                rank_people,
+            }
+        };
+
         for i in 0..4 {
-            let report = |mut scores: [i32; 4], end: GameEnd| {
+            let report_agari = |mut scores: [i32; 4], end: GameEnd| {
                 for j in 0..4 {
                     if self.riichi[j] {
                         scores[j] -= 10;
@@ -127,18 +141,7 @@ impl FinalGameState {
                 }
                 scores[i] += self.deposit * 10;
                 assert!(scores.iter().sum::<i32>() == 1000);
-
-                let mut points = config.to_points(scores, 0);
-                (0..4).for_each(|i| points[i] += self.points[i]);
-                let mut rank_people = [0, 1, 2, 3];
-                rank_people.sort_by_key(|&i| (-points[i], -self.points[i]));
-
-                GameResult {
-                    end,
-                    points,
-                    scores,
-                    rank_people,
-                }
+                report(scores, 0, end)
             };
 
             let tsumo = |x: i32, y: i32| {
@@ -150,7 +153,7 @@ impl FinalGameState {
                         scores[j] -= x;
                     }
                 }
-                report(scores, GameEnd::Tsumo(x, y))
+                report_agari(scores, GameEnd::Tsumo(x, y))
             };
 
             for j in 0..4 {
@@ -159,7 +162,7 @@ impl FinalGameState {
                     let x = score / 100 + self.stack * 3;
                     scores[i] += x;
                     scores[j] -= x;
-                    report(scores, GameEnd::Rong(score))
+                    report_agari(scores, GameEnd::Rong(score))
                 };
 
                 if i == j {
@@ -189,6 +192,34 @@ impl FinalGameState {
                     }
                 }
             }
+        }
+
+        'case: for res in 0u8..16 {
+            let tempai: [_; 4] = array::from_fn(|i| res & (1 << i) > 0);
+            for (&riichi, tempai) in self.riichi.iter().zip(tempai) {
+                if riichi && !tempai {
+                    continue 'case;
+                }
+            }
+            let tempai_count = res.count_ones() as i32;
+            let noten_count = 4 - tempai_count;
+            let mut scores = self.scores;
+            for i in 0..4 {
+                if self.riichi[i] {
+                    scores[i] -= 10;
+                }
+                if tempai_count > 0 && noten_count > 0 {
+                    if tempai[i] {
+                        scores[i] += 30 / tempai_count;
+                    } else {
+                        scores[i] -= 30 / noten_count;
+                    }
+                }
+            }
+            let deposit = self.deposit + self.riichi.iter().filter(|&&x| x).count() as i32 * 10;
+            results
+                .no_agari
+                .push(report(scores, deposit, GameEnd::Ryukyoku(tempai)));
         }
 
         results

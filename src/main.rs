@@ -1,6 +1,6 @@
-use itertools::Itertools;
+use itertools::{Itertools, join};
 use lazy_format::lazy_format;
-use mahjong_last_game::{FinalGameState, GameConfig};
+use mahjong_last_game::{FinalGameState, GameConfig, GameEnd};
 
 fn main() {
     let results = FinalGameState::new(
@@ -12,14 +12,17 @@ fn main() {
     )
     .calc(GameConfig::m_league());
 
+    let winners_str = |ranks: [usize; 4]| {
+        (0..4)
+            .map(|i| lazy_format!(if ranks[i] < 2 => "{i}" else => " "))
+            .join("")
+    };
     for i in 0..4 {
         for j in 0..4 {
             let mut previous = None;
             for result in &results.agari[i][j] {
                 let ranks = result.ranks();
-                let winners_str = (0..4)
-                    .map(|i| lazy_format!(if ranks[i] < 2 => "{i}" else => " "))
-                    .join("");
+                let winners_str = winners_str(ranks);
                 if previous.as_ref() != Some(&winners_str) {
                     let label = lazy_format!(
                         if i != j => "{i}<-{j}"
@@ -35,12 +38,27 @@ fn main() {
                     );
                     println!(
                         "{label} {} => {winners_str}   {self_win}   {sashikomi}  {:?} {:?}",
-                        result.end, result.scores.map(|x| x*100), result.points,
+                        result.end,
+                        result.scores.map(|x| x * 100),
+                        result.points,
                     );
                     previous = Some(winners_str);
                 }
             }
             println!();
         }
+    }
+    for result in &results.no_agari {
+        let ranks = result.ranks();
+        let winners_str = winners_str(ranks);
+        let GameEnd::Ryukyoku(tempai) = result.end else {
+            panic!()
+        };
+        let tempai_str = tempai.iter().map(|&x| if x { "o" } else { "_" }).join("");
+        println!(
+            "{tempai_str} => {winners_str}       {:?} {:?}",
+            result.scores.map(|x| x * 100),
+            result.points,
+        );
     }
 }
