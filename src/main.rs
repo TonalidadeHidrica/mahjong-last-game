@@ -34,8 +34,8 @@ fn main() {
                         else => " "
                     );
                     println!(
-                        "{label} {} => {winners_str}   {self_win}   {sashikomi}",
-                        result.end,
+                        "{label} {} => {winners_str}   {self_win}   {sashikomi}  {:?} {:?}",
+                        result.end, result.scores.map(|x| x*100), result.points,
                     );
                     previous = Some(winners_str);
                 }
