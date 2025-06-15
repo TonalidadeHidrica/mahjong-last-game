@@ -1,3 +1,4 @@
+use agari_scores::{child_rong, child_tsumo, parent_rong, parent_tsumo};
 use itertools::Itertools;
 use num_traits::Euclid;
 
@@ -64,7 +65,66 @@ impl FinalGameState {
 
     pub fn calc(self, config: GameConfig) {
         for i in 0..4 {
-            for j in 0..4 {}
+            let report = |mut scores: [i32; 4]| {
+                scores[i] += self.deposit * 10;
+                assert!(scores.iter().sum::<i32>() == 1000);
+
+                let mut points = config.to_points(scores, 0);
+                (0..4).for_each(|i| points[i] += self.points[i]);
+                let mut ranks = [0, 1, 2, 3];
+                ranks.sort_by_key(|&i| (-points[i], -self.points[i]));
+
+                println!("{}  {scores:?} {points:?}", ranks.iter().join(""));
+            };
+
+            let tsumo = |x: i32, y: i32| {
+                let mut scores = self.scores;
+                for j in 0..4 {
+                    if j != i {
+                        let x = if j == 3 { y } else { x } / 100 + self.stack;
+                        scores[i] += x;
+                        scores[j] -= x;
+                    }
+                }
+                report(scores);
+            };
+
+            for j in 0..4 {
+                let rong = |x: i32| {
+                    let mut scores = self.scores;
+                    let x = x / 100 + self.stack * 3;
+                    scores[i] += x;
+                    scores[j] -= x;
+                    report(scores);
+                };
+
+                if i == j {
+                    if i == 3 {
+                        for x in parent_tsumo() {
+                            print!("{i} tsumo {x:5} all   => ");
+                            tsumo(x, x);
+                        }
+                    } else {
+                        for (x, y) in child_tsumo() {
+                            print!("{i} tsumo {x:5}-{y:5} => ");
+                            tsumo(x, y);
+                        }
+                    }
+                } else {
+                    #[allow(clippy::collapsible_if)]
+                    if i == 3 {
+                        for x in parent_rong() {
+                            print!("{i}<-{j}    rong {x:6} => ");
+                            rong(x);
+                        }
+                    } else {
+                        for x in child_rong() {
+                            print!("{i}<-{j}    rong {x:6} => ");
+                            rong(x);
+                        }
+                    }
+                }
+            }
         }
     }
 }
