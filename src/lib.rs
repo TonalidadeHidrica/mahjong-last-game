@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use agari_scores::{child_rong, child_tsumo, parent_rong, parent_tsumo};
 use itertools::Itertools;
 use num_traits::Euclid;
@@ -48,33 +50,95 @@ impl GameConfig {
 pub struct FinalGameState {
     points: [i32; 4],
     scores: [i32; 4],
+    riichi: [bool; 4],
     stack: i32,
     deposit: i32,
 }
 impl FinalGameState {
-    pub fn new(points: [i32; 4], scores: [i32; 4], stack: i32, deposit: i32) -> Self {
+    pub fn new(
+        points: [i32; 4],
+        scores: [i32; 4],
+        riichi: [bool; 4],
+        stack: i32,
+        deposit: i32,
+    ) -> Self {
         assert!(points.iter().sum::<i32>() == 0);
         assert!(scores.iter().sum::<i32>() + deposit * 10 == 1000);
         Self {
             points,
             scores,
+            riichi,
             stack,
             deposit,
         }
     }
+}
 
-    pub fn calc(self, config: GameConfig) {
+#[derive(Default, Debug)]
+pub struct Results {
+    pub agari: [[Vec<GameResult>; 4]; 4],
+    pub no_agari: Vec<GameResult>,
+}
+#[derive(Debug)]
+pub struct GameResult {
+    pub end: GameEnd,
+    pub points: [i32; 4],
+    pub scores: [i32; 4],
+    // List of persons in the order of ranks
+    pub rank_people: [usize; 4],
+}
+impl GameResult {
+    pub fn ranks(&self) -> [usize; 4] {
+        let mut ranks = [0; 4];
+        for (rank, &person) in self.rank_people.iter().enumerate() {
+            ranks[person] = rank;
+        }
+        ranks
+    }
+}
+#[derive(Debug)]
+pub enum GameEnd {
+    Tsumo(i32, i32),
+    Rong(i32),
+    Ryukyoku([bool; 4]),
+}
+impl Display for GameEnd {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            GameEnd::Tsumo(x, y) if x != y => write!(f, "{x:5}-{y:<5}")?,
+            GameEnd::Tsumo(x, _) => write!(f, "{x:5} all  ")?,
+            GameEnd::Rong(x) => write!(f, "rong {x:6}")?,
+            GameEnd::Ryukyoku(_) => {}
+        }
+        Ok(())
+    }
+}
+impl FinalGameState {
+    pub fn calc(self, config: GameConfig) -> Results {
+        let mut results = Results::default();
+
         for i in 0..4 {
-            let report = |mut scores: [i32; 4]| {
+            let report = |mut scores: [i32; 4], end: GameEnd| {
+                for j in 0..4 {
+                    if self.riichi[j] {
+                        scores[j] -= 10;
+                        scores[i] += 10;
+                    }
+                }
                 scores[i] += self.deposit * 10;
                 assert!(scores.iter().sum::<i32>() == 1000);
 
                 let mut points = config.to_points(scores, 0);
                 (0..4).for_each(|i| points[i] += self.points[i]);
-                let mut ranks = [0, 1, 2, 3];
-                ranks.sort_by_key(|&i| (-points[i], -self.points[i]));
+                let mut rank_people = [0, 1, 2, 3];
+                rank_people.sort_by_key(|&i| (-points[i], -self.points[i]));
 
-                println!("{}  {scores:?} {points:?}", ranks.iter().join(""));
+                GameResult {
+                    end,
+                    points,
+                    scores,
+                    rank_people,
+                }
             };
 
             let tsumo = |x: i32, y: i32| {
@@ -86,46 +150,48 @@ impl FinalGameState {
                         scores[j] -= x;
                     }
                 }
-                report(scores);
+                report(scores, GameEnd::Tsumo(x, y))
             };
 
             for j in 0..4 {
-                let rong = |x: i32| {
+                let rong = |score: i32| {
                     let mut scores = self.scores;
-                    let x = x / 100 + self.stack * 3;
+                    let x = score / 100 + self.stack * 3;
                     scores[i] += x;
                     scores[j] -= x;
-                    report(scores);
+                    report(scores, GameEnd::Rong(score))
                 };
 
                 if i == j {
                     if i == 3 {
                         for x in parent_tsumo() {
-                            print!("{i} tsumo {x:5} all   => ");
-                            tsumo(x, x);
+                            // print!("{i} tsumo {x:5} all   => ");
+                            results.agari[i][j].push(tsumo(x, x));
                         }
                     } else {
                         for (x, y) in child_tsumo() {
-                            print!("{i} tsumo {x:5}-{y:5} => ");
-                            tsumo(x, y);
+                            // print!("{i} tsumo {x:5}-{y:<5} => ");
+                            results.agari[i][j].push(tsumo(x, y));
                         }
                     }
                 } else {
                     #[allow(clippy::collapsible_if)]
                     if i == 3 {
                         for x in parent_rong() {
-                            print!("{i}<-{j}    rong {x:6} => ");
-                            rong(x);
+                            // print!("{i}<-{j}    rong {x:6} => ");
+                            results.agari[i][j].push(rong(x));
                         }
                     } else {
                         for x in child_rong() {
-                            print!("{i}<-{j}    rong {x:6} => ");
-                            rong(x);
+                            // print!("{i}<-{j}    rong {x:6} => ");
+                            results.agari[i][j].push(rong(x));
                         }
                     }
                 }
             }
         }
+
+        results
     }
 }
 
